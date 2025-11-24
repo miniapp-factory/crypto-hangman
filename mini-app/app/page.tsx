@@ -1,14 +1,405 @@
-import { description, title } from "@/lib/metadata";
-import { generateMetadata } from "@/lib/farcaster-embed";
+"use client";
 
-export { generateMetadata };
+import { useState, useEffect } from "react";
 
-export default function Home() {
-  // NEVER write anything here, only use this page to import components
+// Kelimeleri karıştırma fonksiyonu
+function shuffleArray<T>(arr: T[]): T[] {
+  const copy = [...arr];
+  for (let i = copy.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy;
+}
+
+const ORIGINAL_WORDS = [
+  "BLOCKCHAIN",
+  "BITCOIN",
+  "ETHEREUM",
+  "WALLET",
+  "GAS",
+  "MINING",
+  "STAKING",
+  "AIRDROP",
+  "LIQUIDITY",
+  "DEFI",
+  "HALVING",
+  "BULLRUN",
+  "BEARISH",
+  "SMARTCONTRACT",
+  "OPENXAI",
+];
+
+const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
+const MAX_WRONG = 6;
+
+type LevelStatus = "pending" | "current" | "won" | "lost";
+
+export default function Page() {
+  // KELİMELER RASTGELE SIRALANIYOR ⬇⬇⬇
+  const [words, setWords] = useState<string[]>(() =>
+    shuffleArray(ORIGINAL_WORDS)
+  );
+
+  const [levelIndex, setLevelIndex] = useState(0);
+  const [guessed, setGuessed] = useState<Set<string>>(new Set());
+  const [wrong, setWrong] = useState(0);
+  const [hintUsed, setHintUsed] = useState(false);
+  const [gameOver, setGameOver] = useState(false);
+  const [darkMode, setDarkMode] = useState(false);
+
+  const [transitionPopup, setTransitionPopup] = useState(false);
+  const [transitionCountdown, setTransitionCountdown] = useState(3);
+
+  const [statuses, setStatuses] = useState<LevelStatus[]>(() => {
+    const arr = Array(words.length).fill("pending") as LevelStatus[];
+    arr[0] = "current";
+    return arr;
+  });
+
+  const word = words[levelIndex];
+
+  const revealed = word.split("").map((c) => (guessed.has(c) ? c : "_"));
+
+  const wordFontClass =
+    word.length <= 6 ? "text-3xl" : word.length <= 10 ? "text-2xl" : "text-xl";
+
+  const handleGuess = (L: string) => {
+    if (gameOver || transitionPopup) return;
+    if (guessed.has(L)) return;
+
+    const newGuessed = new Set(guessed);
+    newGuessed.add(L);
+
+    let newWrong = wrong;
+    if (!word.includes(L)) newWrong++;
+
+    const newRevealed = word.split("").map((c) =>
+      newGuessed.has(c) ? c : "_"
+    );
+
+    const isWonNow = newRevealed.join("") === word;
+    const isLostNow = newWrong >= MAX_WRONG;
+
+    setGuessed(newGuessed);
+    setWrong(newWrong);
+
+    if (isWonNow || isLostNow) {
+      setStatuses((prev) => {
+        const copy = [...prev];
+        copy[levelIndex] = isWonNow ? "won" : "lost";
+        return copy;
+      });
+
+      // SON LEVEL MI?
+      if (levelIndex === words.length - 1) {
+        setGameOver(true);
+      } else {
+        // GEÇİŞ POPUP
+        setTransitionCountdown(3);
+        setTransitionPopup(true);
+      }
+    }
+  };
+
+  const handleHint = () => {
+    if (hintUsed || gameOver || transitionPopup) return;
+
+    const unrevealed = word.split("").filter((c) => !guessed.has(c));
+    if (unrevealed.length === 0) return;
+
+    const pick =
+      unrevealed[Math.floor(Math.random() * unrevealed.length)];
+
+    setHintUsed(true);
+    handleGuess(pick);
+  };
+
+  const restartGame = () => {
+    const shuffled = shuffleArray(ORIGINAL_WORDS);
+
+    setWords(shuffled);
+    setLevelIndex(0);
+    setGuessed(new Set());
+    setWrong(0);
+    setHintUsed(false);
+    setGameOver(false);
+    setTransitionPopup(false);
+    setTransitionCountdown(3);
+    setStatuses(() => {
+      const arr = Array(shuffled.length).fill("pending") as LevelStatus[];
+      arr[0] = "current";
+      return arr;
+    });
+  };
+
+  const wonCount = statuses.filter((s) => s === "won").length;
+  const lostCount = statuses.filter((s) => s === "lost").length;
+
+  // ✔ SATIR KIRMALI PAYLAŞIM METNİ ( %0A ile )
+  const shareText =
+    `I just played Crypto Hangman: ${wonCount} correct, ${lostCount} wrong!` +
+    `%0AWould you like to play too?` +
+    `%0Ahttps://farcaster.xyz/miniapps/gY0-xSldB3lc/crypto-hangman`;
+
+  const shareOnX = () => {
+    window.open(
+      `https://twitter.com/intent/tweet?text=${shareText}`,
+      "_blank"
+    );
+  };
+
+  const shareOnFarcaster = () => {
+    window.open(
+      `https://warpcast.com/~/compose?text=${shareText}`,
+      "_blank"
+    );
+  };
+
+  const statusColor = (s: LevelStatus) => {
+    if (s === "current") return "bg-orange-400 text-white";
+    if (s === "won") return "bg-green-500 text-white";
+    if (s === "lost") return "bg-red-500 text-white";
+    return "bg-gray-200 text-gray-700";
+  };
+
+  // GEÇİŞ POPUP COUNTDOWN
+  useEffect(() => {
+    if (!transitionPopup) return;
+
+    if (transitionCountdown <= 0) {
+      setTransitionPopup(false);
+      setTransitionCountdown(3);
+      setGuessed(new Set());
+      setWrong(0);
+      setHintUsed(false);
+
+      setLevelIndex((prev) => {
+        const next = prev + 1;
+
+        setStatuses((old) => {
+          const copy = [...old];
+          copy[next] = "current";
+          return copy;
+        });
+
+        return next;
+      });
+
+      return;
+    }
+
+    const t = setTimeout(() => {
+      setTransitionCountdown((c) => c - 1);
+    }, 1000);
+
+    return () => clearTimeout(t);
+  }, [transitionPopup, transitionCountdown]);
+
+  const isWonNow = revealed.join("") === word;
+  const isLostNow = wrong >= MAX_WRONG;
+
   return (
-    <main className="flex flex-col gap-3 place-items-center place-content-center px-4 grow">
-      <span className="text-2xl">{title}</span>
-      <span className="text-muted-foreground">{description}</span>
-    </main>
+    <div
+      className={`min-h-screen ${
+        darkMode ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-900"
+      }`}
+    >
+      <div className="max-w-4xl mx-auto px-4 py-6">
+        {/* ÜST BAR */}
+        <div className="flex items-center justify-between">
+          <h1 className="text-2xl font-bold">Crypto Hangman</h1>
+          <button
+            onClick={() => setDarkMode((m) => !m)}
+            className="px-3 py-1 rounded border text-sm"
+          >
+            {darkMode ? "Light Mode" : "Dark Mode"}
+          </button>
+        </div>
+
+        <p className="text-sm opacity-80 mt-1">
+          Guess all {words.length} crypto-related words.
+        </p>
+
+        {/* ANA ALAN */}
+        <div className="mt-6 flex flex-col md:flex-row gap-4">
+          {/* SOL OYUN ALANI */}
+          <div
+            className={`flex-1 rounded-xl shadow-md p-4 ${
+              darkMode ? "bg-slate-800" : "bg-white"
+            }`}
+          >
+            {/* ÇİZİM */}
+            <svg width="140" height="180" className="mx-auto mb-4">
+              <line x1="10" y1="170" x2="130" y2="170" stroke="black" strokeWidth="4" />
+              <line x1="30" y1="170" x2="30" y2="20" stroke="black" strokeWidth="4" />
+              <line x1="30" y1="20" x2="90" y2="20" stroke="black" strokeWidth="4" />
+              <line x1="90" y1="20" x2="90" y2="40" stroke="black" strokeWidth="4" />
+
+              {wrong > 0 && <circle cx="90" cy="55" r="15" stroke="black" strokeWidth="3" fill="none" />}
+              {wrong > 1 && <line x1="90" y1="70" x2="90" y2="110" stroke="black" strokeWidth="3" />}
+              {wrong > 2 && <line x1="90" y1="80" x2="70" y2="100" stroke="black" strokeWidth="3" />}
+              {wrong > 3 && <line x1="90" y1="80" x2="110" y2="100" stroke="black" strokeWidth="3" />}
+              {wrong > 4 && <line x1="90" y1="110" x2="75" y2="140" stroke="black" strokeWidth="3" />}
+              {wrong > 5 && <line x1="90" y1="110" x2="105" y2="140" stroke="black" strokeWidth="3" />}
+            </svg>
+
+            {/* LEVEL & WRONG */}
+            <div className="flex justify-between items-center mb-3 text-sm">
+              <span>
+                Level {levelIndex + 1} / {words.length}
+              </span>
+              <span>
+                Wrong: {wrong} / {MAX_WRONG}
+              </span>
+            </div>
+
+            {/* KELİME */}
+            <div className={`font-mono ${wordFontClass} tracking-widest mb-4 text-center`}>
+              {revealed.join(" ")}
+            </div>
+
+            {/* HINT */}
+            <button
+              onClick={handleHint}
+              disabled={hintUsed || gameOver || transitionPopup}
+              className={`w-full py-2 mb-4 rounded text-white text-sm ${
+                hintUsed || gameOver || transitionPopup
+                  ? "bg-gray-400 cursor-not-allowed"
+                  : "bg-purple-600 hover:brightness-110"
+              }`}
+            >
+              {hintUsed ? "Hint used" : "🔍 Reveal 1 letter"}
+            </button>
+
+            {/* HARF TUŞLARI */}
+            <div className="grid grid-cols-9 gap-2 mb-4">
+              {ALPHABET.map((L) => {
+                const already = guessed.has(L);
+                const disabled = already || gameOver || transitionPopup;
+                const isCorrect = word.includes(L);
+
+                return (
+                  <button
+                    key={L}
+                    onClick={() => handleGuess(L)}
+                    disabled={disabled}
+                    className={`py-2 rounded text-sm transition ${
+                      already
+                        ? isCorrect
+                          ? "bg-green-300"
+                          : "bg-red-300"
+                        : darkMode
+                        ? "bg-slate-700"
+                        : "bg-gray-100"
+                    } ${disabled ? "opacity-50" : "hover:scale-105"}`}
+                  >
+                    {L}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* SAĞ LEVEL LİSTESİ */}
+          <div
+            className={`w-full md:w-32 rounded-xl shadow-md p-4 flex md:flex-col gap-3 ${
+              darkMode ? "bg-slate-800" : "bg-white"
+            }`}
+          >
+            <div className="text-sm font-semibold mb-1 text-center md:text-left">
+              Levels
+            </div>
+            <div className="flex md:flex-col flex-wrap gap-2 md:gap-3 justify-center md:justify-start">
+              {statuses.map((s, idx) => (
+                <div
+                  key={idx}
+                  className={`w-9 h-9 rounded-full border flex items-center justify-center text-xs font-bold transition-transform ${
+                    s === "current" ? "scale-110" : ""
+                  } ${statusColor(s)}`}
+                >
+                  {idx + 1}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* FOOTER */}
+        <div className="mt-6 text-center text-xs opacity-80">
+          This game is designed by{" "}
+          <button
+            onClick={() =>
+              window.open("https://farcaster.xyz/heisenbergyoyo", "_blank")
+            }
+            className="underline hover:opacity-80"
+          >
+            HeisenbergYoYo
+          </button>
+        </div>
+      </div>
+
+      {/* LEVEL GEÇİŞ POPUP */}
+      {transitionPopup && !gameOver && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-40">
+          <div
+            className={`w-full max-w-sm rounded-xl p-6 shadow-lg ${
+              darkMode ? "bg-slate-800 text-white" : "bg-white text-slate-900"
+            }`}
+          >
+            <h2 className="text-lg font-bold mb-2 text-center">Correct word</h2>
+            <p className="text-center mb-2 font-mono text-xl">{word}</p>
+            <p className="text-center text-sm">
+              Next level in… <span className="font-bold">{transitionCountdown}</span>
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* FINAL POPUP */}
+      {gameOver && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+          <div className={`w-full max-w-sm rounded-xl p-6 shadow-lg ${
+              darkMode ? "bg-slate-800 text-white" : "bg-white text-slate-900"
+            }`}>
+            <h2 className="text-xl font-bold mb-2 text-center">
+              Crypto Hangman
+            </h2>
+            <p className="text-center mb-4 text-sm">
+              Game finished! Here is your result:
+            </p>
+
+            <div className="flex justify-around mb-4">
+              <div className="text-green-600 font-bold">✔ {wonCount} correct</div>
+              <div className="text-red-600 font-bold">✖ {lostCount} wrong</div>
+            </div>
+
+            <div className="space-y-2 mb-3">
+              <button
+                onClick={shareOnFarcaster}
+                className="w-full py-2 rounded bg-indigo-600 text-white text-sm"
+              >
+                Share on Farcaster
+              </button>
+              <button
+                onClick={shareOnX}
+                className="w-full py-2 rounded bg-black text-white text-sm"
+              >
+                Share on X
+              </button>
+            </div>
+
+            <button
+              onClick={restartGame}
+              className={`w-full py-2 rounded text-sm ${
+                darkMode ? "bg-slate-700" : "bg-gray-200"
+              }`}
+            >
+              Play Again
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
